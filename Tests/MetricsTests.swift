@@ -16026,6 +16026,15 @@ struct MetricsTests {
                                        hideVorssaintWindows: true,
                                        usesGeometry: false),
                "switching capture mode rebuilds the frozen frame, pointer and window policy")
+        let colorPolicy = ScreenshotSupport.unifiedCapturePolicy(
+            for: .color,
+            screenshotFreeze: false,
+            screenshotIncludePointer: true,
+            screenshotHideVorssaintWindows: true)
+        expect(textPolicy.sharesSource(with: colorPolicy)
+                && !textPolicy.sharesSource(with: recorderPolicy)
+                && !textPolicy.sharesSource(with: liveScreenshotPolicy),
+               "only freeze, pointer and window policy decide whether a mode needs its own photograph")
         expect(ScreenshotSupport.captureGuideIsVisible(pointerOnDisplay: true,
                                                        selectionInProgress: false,
                                                        capturePending: false)
@@ -16051,19 +16060,19 @@ struct MetricsTests {
                     ".opacity(options.selectedTool == .recording ? 1 : 0)"),
                "capture modes reserve the recording controls' height so the chooser never jumps")
         expect(captureSelectionSource.contains("screenCaptureToolDidChange()")
-                && captureSelectionSource.contains("nextPolicy != capturePolicy")
+                && captureSelectionSource.contains("!nextPolicy.sharesSource(with: capturePolicy)")
+                && captureSelectionSource.contains("adoptCapturePolicy(nextPolicy)")
+                && captureSelectionSource.contains("panel.update(frozenImage:")
                 && captureSelectionSource.contains("screenCaptureOptions?.onSelectionChange ="),
-               "capture mode changes stay in place only while their source policy is unchanged")
+               "a capture mode that needs other pixels gets them behind the panels, which stay on screen")
         expect(captureSelectionSource.contains("private var pointerIsInside = false")
                 && !captureSelectionSource.contains("|| bounds.contains(hoverPoint)"),
                "the capture loupe draws on only the display that owns the current pointer")
         let captureServiceSource = (try? String(
             contentsOfFile: "Sources/Vorssaint/Services/QuickTools/ScreenCaptureService.swift",
             encoding: .utf8)) ?? ""
-        expect(captureServiceSource.contains("replaceSelection(options:")
-                && captureServiceSource.contains("selection = nil")
-                && captureServiceSource.contains("controller.cancel()"),
-               "the capture service rebuilds when freeze, pointer or window policy changes")
+        expect(!captureServiceSource.contains("replaceSelection"),
+               "the capture service does not cancel and recreate selection controllers when changing modes")
         // The preview appears unasked for, so presenting it must not take the
         // keyboard away from whatever the person is typing into. Its shortcuts
         // read a local monitor, which is delivered nothing until the panel is
