@@ -525,7 +525,7 @@ private enum UtilityPanelItem: String, PanelOrderItem, Identifiable {
         case .cameraPreview: return .cameraPreview
         case .scratchpad: return .scratchpad
         case .commandBar: return .commandBar
-        case .portManager: return .killProcess
+        case .portManager: return .portManager
         }
     }
 }
@@ -704,7 +704,7 @@ struct UtilitiesSection: View {
     }
 
     private func items(editing: Bool) -> [UtilityPanelItem] {
-        orderedItems.filter { ($0 == .portManager || $0.feature.isAvailable) && (editing || isVisible($0)) }
+        orderedItems.filter { $0.feature.isAvailable && (editing || isVisible($0)) }
     }
 
     private func isVisible(_ item: UtilityPanelItem) -> Bool {

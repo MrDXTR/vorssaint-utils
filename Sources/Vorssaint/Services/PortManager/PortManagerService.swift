@@ -59,18 +59,17 @@ final class PortManagerService: ObservableObject {
             let value = String(line.dropFirst())
             switch type {
             case "p":
-                if pid > 0 && port > 0 { rows.append(.init(port: port, protocolName: proto, address: address, pid: pid, processName: name)) }
                 pid = Int32(value) ?? 0; port = 0; address = ""
             case "c": name = value
             case "P": proto = value
             case "n":
                 address = value
                 if let last = value.split(separator: ":").last, let parsed = Int(last) { port = parsed }
+                if pid > 0 && port > 0 { rows.append(.init(port: port, protocolName: proto, address: address, pid: pid, processName: name)) }
             case "T": continue
             default: continue
             }
         }
-        if pid > 0 && port > 0 { rows.append(.init(port: port, protocolName: proto, address: address, pid: pid, processName: name)) }
         return rows.sorted { $0.port == $1.port ? $0.processName < $1.processName : $0.port < $1.port }
     }
 }

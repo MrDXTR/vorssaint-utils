@@ -232,6 +232,7 @@ extension AppFeature {
         case .cleaner: return FeatureSettingsDestination(.cleaner)
         case .uninstaller: return FeatureSettingsDestination(.uninstaller)
         case .killProcess: return FeatureSettingsDestination(.killProcess)
+        case .portManager: return FeatureSettingsDestination(.portManager)
         case .homebrew: return FeatureSettingsDestination(.homebrew)
         case .appUpdates: return FeatureSettingsDestination(.appUpdates)
         case .screenshot:
@@ -285,7 +286,7 @@ enum FeatureVisibilitySupport {
         case .appUpdates: return [.appUpdates]
         case .uninstaller: return [.uninstaller]
         case .killProcess: return [.killProcess]
-        case .portManager: return []
+        case .portManager: return [.portManager]
         case .keyDebounce: return [.keyboardDebounce]
         case .superKey: return [.superKey]
         case .textSnippets: return [.textSnippets]
