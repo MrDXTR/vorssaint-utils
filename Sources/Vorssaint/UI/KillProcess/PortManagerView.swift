@@ -57,10 +57,13 @@ struct PortManagerView: View {
                     }
                     .padding(.horizontal, 14).padding(.vertical, 7)
                 }
-                .frame(height: 245)
+                // The menu-bar utility stays compact; the Settings page gets
+                // the available detail height instead of leaving a large
+                // unused canvas below a panel-sized list.
+                .frame(height: onClose == nil ? 520 : 245)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { service.refresh() }
         .alert(pending.map { String(format: strings.terminateFormat, $0.processName) } ?? "",
                isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
