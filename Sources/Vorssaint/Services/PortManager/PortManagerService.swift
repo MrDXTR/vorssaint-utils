@@ -54,6 +54,7 @@ final class PortManagerService: ObservableObject {
         let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         var name = "", pid: Int32 = 0, address = "", port = 0, proto = "TCP"
         var rows: [PortManagerEntry] = []
+        var seen = Set<String>()
         for line in text.split(separator: "\n").map(String.init) {
             guard let type = line.first else { continue }
             let value = String(line.dropFirst())
@@ -65,7 +66,12 @@ final class PortManagerService: ObservableObject {
             case "n":
                 address = value
                 if let last = value.split(separator: ":").last, let parsed = Int(last) { port = parsed }
-                if pid > 0 && port > 0 { rows.append(.init(port: port, protocolName: proto, address: address, pid: pid, processName: name)) }
+                if pid > 0 && port > 0 {
+                    let key = "\(proto)|\(port)|\(address)|\(pid)"
+                    if seen.insert(key).inserted {
+                        rows.append(.init(port: port, protocolName: proto, address: address, pid: pid, processName: name))
+                    }
+                }
             case "T": continue
             default: continue
             }

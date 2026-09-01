@@ -48,19 +48,22 @@ struct PortManagerView: View {
                     Text(strings.emptyHint).font(.caption).foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if onClose == nil {
+               List(service.filteredEntries) { entry in
+                    portRow(entry)
+                }
+                .listStyle(.inset)
             } else {
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 0) {
                         ForEach(service.filteredEntries) { entry in
                             portRow(entry)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 14).padding(.vertical, 7)
                 }
-                // The menu-bar utility stays compact; the Settings page gets
-                // the available detail height instead of leaving a large
-                // unused canvas below a panel-sized list.
-                .frame(height: onClose == nil ? 520 : 245)
+                .frame(height: 245)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -114,6 +117,7 @@ struct PortManagerView: View {
             }
         }
         .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
         }
