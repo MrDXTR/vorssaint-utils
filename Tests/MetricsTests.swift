@@ -4734,6 +4734,47 @@ struct MetricsTests {
                && UninstallerSupport.fileIdentity(at: safeFile) != originalFileIdentity,
                "removal stays inside its scan root, rejects symlink escapes and detects path replacement")
         try? FileManager.default.removeItem(at: safetyFixture)
+        func sourceBody(of source: String, from opening: String, to closing: String) -> String {
+            guard let start = source.range(of: opening),
+                  let end = source.range(of: closing, range: start.upperBound..<source.endIndex)
+            else { return "" }
+            return String(source[start.upperBound..<end.lowerBound])
+        }
+        // Building the installed-apps oracle walks the application folders, and
+        // the removal guard reads it under `.leftovers` alone — with leftover
+        // rows unchecked by default, the common clean must not pay for that
+        // walk. JunkCleaner is not part of this test binary, so pin the gate
+        // and the premise that makes an empty oracle safe at their source.
+        let junkCleanerSource = (try? String(
+            contentsOfFile: "Sources/Vorssaint/Services/Cleaner/JunkCleaner.swift",
+            encoding: .utf8)) ?? ""
+        let cleanSelectedBody = sourceBody(of: junkCleanerSource, from: "func cleanSelected()",
+                                           to: "private static func mayRemove")
+        expect(cleanSelectedBody.contains("chosen.contains { $0.category == .leftovers }")
+               && cleanSelectedBody.contains("? Self.installedBundleIDs() : []")
+               && !cleanSelectedBody.contains("let installed = Self.installedBundleIDs()"),
+               "a clean builds the installed-apps oracle only when a leftover row is selected")
+        let mayRemoveBody = sourceBody(of: junkCleanerSource, from: "private static func mayRemove",
+                                       to: "private static func trashViaFinder")
+        let leftoverBranch = mayRemoveBody.range(of: "if item.category == .leftovers")
+        expect(mayRemoveBody.components(separatedBy: "installed: installed").count == 2,
+               "the removal guard consults the installed-apps oracle exactly once")
+        expect(leftoverBranch.map { branch in
+                   mayRemoveBody.range(of: "installed: installed",
+                                       range: branch.upperBound..<mayRemoveBody.endIndex) != nil
+               } == true,
+               "the removal guard reads the installed-apps oracle inside its leftovers branch")
+        // The known-application roster opens every installed app, and only the
+        // shared-data claims read it. AppUninstaller is not part of this test
+        // binary either, so pin the gate that keeps a removal that cannot claim
+        // shared data from paying for the roster.
+        let appUninstallerSource = (try? String(
+            contentsOfFile: "Sources/Vorssaint/Services/Uninstall/AppUninstaller.swift",
+            encoding: .utf8)) ?? ""
+        let removeSelectedBody = sourceBody(of: appUninstallerSource, from: "func removeSelected()",
+                                            to: "func removeSelectedWithHomebrew()")
+        expect(removeSelectedBody.contains("let knownApplications = mayClaimSharedData"),
+               "a removal builds the known-application roster only when it may claim shared data")
         expect(CleanerSupport.bundleIDCandidate(fromEntryName: "com.vendor.editor.prefPane")
                 == "com.vendor.editor",
                "preference panes map to their owning bundle identifier")
@@ -8396,6 +8437,20 @@ struct MetricsTests {
                                                        receivedBytes: 9_638_011,
                                                        expectedBytes: nil),
                "a plausible body with no advertised size is accepted")
+
+        // The showcase loader is a @StateObject, so it can be released without
+        // `.onDisappear` running. Its session holds the download delegate, and
+        // that delegate's deinit is what deletes the scratch file, so the
+        // release path has to invalidate the session too.
+        let showcaseSource = (try? String(
+            contentsOfFile: "Sources/Vorssaint/Services/Update/UpdateShowcaseMedia.swift",
+            encoding: .utf8)) ?? ""
+        let showcaseDeinitBody = (showcaseSource.components(separatedBy: "\n    deinit {")
+            .dropFirst().first ?? "").components(separatedBy: "\n    }").first ?? ""
+        expect(showcaseDeinitBody.contains("session?.invalidateAndCancel()"),
+               "a released showcase loader invalidates its session, freeing the delegate and its scratch file")
+        expect(!showcaseDeinitBody.contains("finishTasksAndInvalidate"),
+               "a released showcase loader cancels its download instead of letting it finish")
 
         expect(SettingsSearchSupport.matches(query: "", title: "Monitor"),
                "a blank settings search matches everything")
@@ -21940,6 +21995,46 @@ struct MetricsTests {
                          "\(language.rawValue) quit protection double HUD format")
             expectFormat(quitProtection.extraHUDFormat, ["@"],
                          "\(language.rawValue) quit protection modifier HUD format")
+        }
+
+        // The ranking folds what was typed once and hands the folded letters to
+        // every row in the pool. Both readings have to agree, or a name the
+        // person gave would rank differently depending on which one asked.
+        var foldedMemory = CommandBarQueryMemory()
+        expect(foldedMemory.boost(normalizedQuery: "pri", id: "app.primary") == 0,
+               "a memory holding nothing is worth nothing for folded letters either")
+        foldedMemory.record(query: "Primary", id: "app.primary", step: 1)
+        expect(foldedMemory.boost(normalizedQuery: CommandBarSearch.normalized("PRÍ"),
+                                  id: "app.primary") > 0
+                && foldedMemory.boost(normalizedQuery: CommandBarSearch.normalized("PRÍ"),
+                                      id: "app.primary")
+                    == foldedMemory.boost(query: "PRÍ", id: "app.primary"),
+               "folded letters ask the query memory the same question the raw ones do")
+        expect(CommandBarPreferences.aliasHit(
+                    "Códex", normalizedQuery: CommandBarSearch.normalized("CÓD")) == .prefix
+                && CommandBarPreferences.aliasHit(
+                    "Códex", normalizedQuery: CommandBarSearch.normalized("CÓD"))
+                    == CommandBarPreferences.aliasHit("Códex", query: "CÓD"),
+               "folded letters ask an alias the same question the raw ones do")
+
+        // Both background passes guard on a few fields of a tuple they store
+        // whole. Returning before the store would leave every field the guard
+        // does not name at the reading it had when the named ones last moved.
+        for (pass, marker) in [("refreshStorageAnswer", "cachedBootVolumeSpace = space"),
+                               ("refreshSystemAnswers", "cachedMemory = memory")] {
+            let parts = (commandBarCode
+                .components(separatedBy: "private func \(pass)(").last ?? "")
+                .components(separatedBy: "\n    private func ")
+            let body = parts.first ?? ""
+            expect(parts.count > 1, "\(pass) finds the end of its own body")
+            func offset(_ needle: String) -> Int {
+                body.range(of: needle)
+                    .map { body.distance(from: body.startIndex, to: $0.lowerBound) } ?? -1
+            }
+            let stored = offset(marker)
+            let guarded = offset("guard changed else { return }")
+            expect(stored >= 0 && guarded > stored,
+                   "\(pass) stores the whole sample before it decides whether the rows changed")
         }
 
         if failures.isEmpty {
