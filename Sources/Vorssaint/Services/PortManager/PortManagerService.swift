@@ -39,8 +39,9 @@ final class PortManagerService: ObservableObject {
 
     private static func snapshot() -> [PortManagerEntry]? {
         let result = Shell.run("/usr/sbin/lsof", ["-nP", "+c0", "-iTCP", "-sTCP:LISTEN", "-F", "pcnPT"])
-        guard result.status == 0 else { return nil }
-        return PortManagerSupport.parseLsof(result.output).map { entry in
+        // Negative status means Shell.run hit its own timeout — always bail.
+        guard result.status >= 0 else { return nil }
+        let parsed = PortManagerSupport.parseLsof(result.output).map { entry in
             PortManagerEntry(port: entry.port,
                              protocolName: entry.protocolName,
                              address: entry.address,
@@ -48,6 +49,12 @@ final class PortManagerService: ObservableObject {
                              processName: entry.processName,
                              startedAt: KillProcessService.startTime(for: entry.pid))
         }
+        // lsof exits 1 when it prints a warning but still outputs good rows above
+        // it; treat that as a valid snapshot. Only return nil when non-zero AND
+        // the parse came up empty — that's a genuine failure we should not use to
+        // replace good data already on screen.
+        if result.status != 0 && parsed.isEmpty { return nil }
+        return parsed
     }
 
 }

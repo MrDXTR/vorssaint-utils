@@ -112,13 +112,15 @@ struct PortManagerView: View {
             HStack(spacing: 6) {
                 Button(strings.kill) { force = false; pending = entry }
                     .buttonStyle(.bordered).controlSize(.small)
-                    .disabled(entry.startedAt == nil || KillProcessService.isProtected(pid: entry.pid,
-                                                                                         name: entry.processName))
+                    .disabled(!AppFeature.killProcess.isAvailable
+                              || entry.startedAt == nil
+                              || KillProcessService.isProtected(pid: entry.pid, name: entry.processName))
                 Button { force = true; pending = entry } label: { Image(systemName: "bolt.fill") }
                     .buttonStyle(.bordered).controlSize(.small)
                     .accessibilityLabel(strings.forceKill)
-                    .disabled(entry.startedAt == nil || KillProcessService.isProtected(pid: entry.pid,
-                                                                                         name: entry.processName))
+                    .disabled(!AppFeature.killProcess.isAvailable
+                              || entry.startedAt == nil
+                              || KillProcessService.isProtected(pid: entry.pid, name: entry.processName))
             }
         }
         .padding(.vertical, 3)
