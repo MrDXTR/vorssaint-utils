@@ -11658,6 +11658,30 @@ struct MetricsTests {
         expect(HomebrewCommandBuilder.upgradeAll(brewPath: brewPath).arguments
                == ["upgrade"],
                "Homebrew update all command upgrades all outdated packages")
+
+        // brew exits non-zero when it could not do all of a run, not only when it
+        // did none of it, so the installed and outdated lists have to be re-read
+        // after a failed operation too. Read from the source: the refresh happens
+        // inside a completion closure that no unit test can drive.
+        let managerSource = (try? String(
+            contentsOfFile: "Sources/Vorssaint/Services/Homebrew/HomebrewManager.swift",
+            encoding: .utf8)) ?? ""
+        expect(!managerSource.isEmpty, "HomebrewManager source is readable for the refresh checks")
+        let managerCode = managerSource
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        let refreshCalls = managerCode
+            .components(separatedBy: "self.refreshInstalled(clearingError: false)").count - 1
+        expect(refreshCalls == 3,
+               "the cancelled, needs-terminal and failed operation paths all re-read, "
+               + "found \(refreshCalls)")
+        let guardedBannerClears = managerCode
+            .components(separatedBy: "if clearingError { errorMessage = nil }").count - 1
+        expect(guardedBannerClears == 2,
+               "both banner clears in refreshInstalled are behind its parameter, so the reason "
+               + "a failed operation gave survives the refresh that follows it, found "
+               + "\(guardedBannerClears)")
         expect(HomebrewOperation.Action.install.runningSystemImage == "arrow.down.circle.fill",
                "Homebrew install status uses a download icon")
         expect(HomebrewOperation.Action.uninstall.runningSystemImage == "trash.circle.fill",
@@ -15105,6 +15129,50 @@ struct MetricsTests {
                                                     appBundleIdentifier: nil,
                                                     appPID: 0) == nil,
                "paused or ownerless metadata degrades to Nothing Playing")
+        let adapterLine = Data("""
+            {"kMRMediaRemoteNowPlayingInfoTitle":"Midnight City","kMRMediaRemoteNowPlayingInfoArtist":"M83",\
+            "kMRMediaRemoteNowPlayingInfoPlaybackRate":1,"artworkBase64":"AQID","pid":42,\
+            "displayID":"com.apple.Music","isPlaying":true}
+            """.utf8)
+        let adapterReply = RadialNowPlayingSupport.adapterReply(from: adapterLine)
+        expect(adapterReply?.info[RadialNowPlayingSupport.titleKey] as? String == "Midnight City"
+                && adapterReply?.info[RadialNowPlayingSupport.artistKey] as? String == "M83"
+                && adapterReply?.info[RadialNowPlayingSupport.artworkDataKey] as? Data == Data([1, 2, 3])
+                && (adapterReply?.info[RadialNowPlayingSupport.playbackRateKey] as? NSNumber)?.doubleValue == 1
+                && adapterReply?.pid == 42
+                && adapterReply?.displayID == "com.apple.Music"
+                && adapterReply?.isPlaying == true,
+               "the Now Playing adapter line is read back into the MediaRemote keys the snapshot builder takes")
+        let adapterPaused = RadialNowPlayingSupport.adapterReply(
+            from: Data(#"{"kMRMediaRemoteNowPlayingInfoTitle":"Midnight City","isPlaying":false}"#.utf8))
+        expect(adapterPaused?.pid == 0 && adapterPaused?.displayID == nil && adapterPaused?.isPlaying == false
+                && RadialNowPlayingSupport.snapshot(
+                    info: adapterPaused?.info ?? [:],
+                    isPlaying: RadialNowPlayingSupport.playbackIsActive(remoteIsPlaying: adapterPaused?.isPlaying,
+                                                                       info: adapterPaused?.info ?? [:]),
+                    appBundleIdentifier: adapterPaused?.displayID,
+                    appPID: adapterPaused?.pid ?? 0) == nil,
+               "a paused adapter reply degrades to Nothing Playing through the same path as before")
+        expect(RadialNowPlayingSupport.adapterReply(from: Data(#"{"error":"MRMediaRemoteGetNowPlayingInfo unavailable"}"#.utf8)) == nil
+                && RadialNowPlayingSupport.adapterReply(from: Data("[1,2]".utf8)) == nil
+                && RadialNowPlayingSupport.adapterReply(from: Data("perl: cannot load".utf8)) == nil
+                && RadialNowPlayingSupport.adapterReply(from: Data(#"{"artworkBase64":"***"}"#.utf8))?
+                    .info[RadialNowPlayingSupport.artworkDataKey] == nil,
+               "an adapter error, a non-object, shell noise or bad base64 never become a snapshot")
+        let adapterAfterWarning = RadialNowPlayingSupport.adapterReply(from: Data("""
+            perl: warning: Setting locale failed.
+            perl: warning: Falling back to the standard locale ("C").
+            {"kMRMediaRemoteNowPlayingInfoTitle":"Midnight City","pid":42,"isPlaying":true}
+
+            """.utf8))
+        expect(adapterAfterWarning?.info[RadialNowPlayingSupport.titleKey] as? String == "Midnight City"
+                && adapterAfterWarning?.pid == 42 && adapterAfterWarning?.isPlaying == true,
+               "a perl warning on the shared stderr pipe ahead of the adapter's JSON line still parses")
+        let nowPlayingBuildScript = (try? String(contentsOfFile: "build.sh", encoding: .utf8)) ?? ""
+        expect(nowPlayingBuildScript.contains("Sources/NowPlayingAdapter/NowPlayingAdapter.swift")
+                && nowPlayingBuildScript.contains("Resources/now-playing.pl")
+                && nowPlayingBuildScript.contains("Contents/Frameworks/$NOW_PLAYING_ADAPTER"),
+               "build.sh compiles the Now Playing adapter and stages the library and its perl loader")
         let radialQuickToggle = RadialMenuItem(kind: .quickToggle,
                                                payload: RadialMenuQuickToggle.darkMode.rawValue)
         expect(RadialMenuSupport.sanitized([radialQuickToggle]) == [radialQuickToggle]
