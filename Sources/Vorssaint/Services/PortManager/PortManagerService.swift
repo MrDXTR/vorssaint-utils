@@ -2,16 +2,6 @@
 // Copyright (C) 2026 Vorssaint
 
 import Foundation
-import Darwin
-
-struct PortManagerEntry: Identifiable, Equatable {
-    let port: Int
-    let protocolName: String
-    let address: String
-    let pid: Int32
-    let processName: String
-    var id: String { "\(protocolName)-\(port)-\(pid)-\(address)" }
-}
 
 final class PortManagerService: ObservableObject {
     static let shared = PortManagerService()
@@ -38,44 +28,26 @@ final class PortManagerService: ObservableObject {
     }
 
     func terminate(_ entry: PortManagerEntry, force: Bool) {
-        guard entry.pid > 1, entry.pid != Int32(ProcessInfo.processInfo.processIdentifier) else { return }
-        _ = Darwin.kill(entry.pid, force ? SIGKILL : SIGTERM)
-        refresh()
+        guard let startedAt = entry.startedAt else { return }
+        KillProcessService.shared.kill(pid: entry.pid,
+                                       name: entry.processName,
+                                       startedAt: startedAt,
+                                       force: force) { [weak self] in
+            self?.refresh()
+        }
     }
 
     private static func snapshot() -> [PortManagerEntry] {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcnPT"]
-        process.standardOutput = output
-        try? process.run()
-        process.waitUntilExit()
-        let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        var name = "", pid: Int32 = 0, address = "", port = 0, proto = "TCP"
-        var rows: [PortManagerEntry] = []
-        var seen = Set<String>()
-        for line in text.split(separator: "\n").map(String.init) {
-            guard let type = line.first else { continue }
-            let value = String(line.dropFirst())
-            switch type {
-            case "p":
-                pid = Int32(value) ?? 0; port = 0; address = ""
-            case "c": name = value
-            case "P": proto = value
-            case "n":
-                address = value
-                if let last = value.split(separator: ":").last, let parsed = Int(last) { port = parsed }
-                if pid > 0 && port > 0 {
-                    let key = "\(proto)|\(port)|\(address)|\(pid)"
-                    if seen.insert(key).inserted {
-                        rows.append(.init(port: port, protocolName: proto, address: address, pid: pid, processName: name))
-                    }
-                }
-            case "T": continue
-            default: continue
-            }
+        let result = Shell.run("/usr/sbin/lsof", ["-nP", "+c0", "-iTCP", "-sTCP:LISTEN", "-F", "pcnPT"])
+        guard result.status == 0 else { return [] }
+        return PortManagerSupport.parseLsof(result.output).map { entry in
+            PortManagerEntry(port: entry.port,
+                             protocolName: entry.protocolName,
+                             address: entry.address,
+                             pid: entry.pid,
+                             processName: entry.processName,
+                             startedAt: KillProcessService.startTime(for: entry.pid))
         }
-        return rows.sorted { $0.port == $1.port ? $0.processName < $1.processName : $0.port < $1.port }
     }
+
 }

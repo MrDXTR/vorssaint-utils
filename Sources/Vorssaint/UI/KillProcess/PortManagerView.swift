@@ -49,8 +49,9 @@ struct PortManagerView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if onClose == nil {
-               List(service.filteredEntries) { entry in
+                List(service.filteredEntries) { entry in
                     portRow(entry)
+                        .listRowSeparator(.hidden)
                 }
                 .listStyle(.inset)
             } else {
@@ -111,9 +112,13 @@ struct PortManagerView: View {
             HStack(spacing: 6) {
                 Button(strings.kill) { force = false; pending = entry }
                     .buttonStyle(.bordered).controlSize(.small)
+                    .disabled(entry.startedAt == nil || KillProcessService.isProtected(pid: entry.pid,
+                                                                                         name: entry.processName))
                 Button { force = true; pending = entry } label: { Image(systemName: "bolt.fill") }
                     .buttonStyle(.bordered).controlSize(.small)
                     .accessibilityLabel(strings.forceKill)
+                    .disabled(entry.startedAt == nil || KillProcessService.isProtected(pid: entry.pid,
+                                                                                         name: entry.processName))
             }
         }
         .padding(.vertical, 3)
