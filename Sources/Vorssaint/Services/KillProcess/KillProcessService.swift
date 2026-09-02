@@ -295,10 +295,10 @@ final class KillProcessService: ObservableObject {
             if !removed.isEmpty {
                 self.entries.removeAll { removed.contains($0.pid) }
             }
-            completion?()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refresh(force: true)
+            completion?()
         }
     }
 

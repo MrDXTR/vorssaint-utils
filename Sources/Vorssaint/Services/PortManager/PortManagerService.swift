@@ -21,7 +21,7 @@ final class PortManagerService: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Self.snapshot()
             DispatchQueue.main.async {
-                self.entries = result
+                if let result { self.entries = result } 
                 self.isRefreshing = false
             }
         }
@@ -37,9 +37,9 @@ final class PortManagerService: ObservableObject {
         }
     }
 
-    private static func snapshot() -> [PortManagerEntry] {
+    private static func snapshot() -> [PortManagerEntry]? {
         let result = Shell.run("/usr/sbin/lsof", ["-nP", "+c0", "-iTCP", "-sTCP:LISTEN", "-F", "pcnPT"])
-        guard result.status == 0 else { return [] }
+        guard result.status == 0 else { return nil }
         return PortManagerSupport.parseLsof(result.output).map { entry in
             PortManagerEntry(port: entry.port,
                              protocolName: entry.protocolName,
