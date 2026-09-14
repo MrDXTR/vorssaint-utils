@@ -26,6 +26,7 @@ final class ClipboardHistoryService: ObservableObject {
     @Published private(set) var entries: [ClipboardHistoryEntry] = [] {
         didSet { entriesStamp &+= 1 }
     }
+    let capturedEntry = PassthroughSubject<ClipboardHistoryEntry, Never>()
     @Published private(set) var isRunning = false
     @Published private(set) var shortcutRegistrationFailed = false
     @Published private(set) var quickBatchEntryIDs: Set<UUID> = []
@@ -663,7 +664,7 @@ final class ClipboardHistoryService: ObservableObject {
         -> (data: Data, width: Int, height: Int)? {
         let png = pasteboard.data(forType: .png)
         guard let source = png ?? pasteboard.data(forType: .tiff),
-              source.count <= maxRawImageBytes,
+              source.count <= (png == nil ? maxRawImageBytes : maxImageBytes),
               let rep = NSBitmapImageRep(data: source),
               rep.pixelsWide > 0, rep.pixelsHigh > 0
         else { return nil }
@@ -793,6 +794,7 @@ final class ClipboardHistoryService: ObservableObject {
         } else {
             entries.insert(entry, at: firstRecentIndex)
         }
+        capturedEntry.send(entry)
     }
 
     private func normalizeEntryOrder() {
@@ -865,7 +867,8 @@ final class ClipboardHistoryService: ObservableObject {
         normalizeEntryOrder()
         trimToLimit()
         // Sweep image files that lost their entry (crash between write and save).
-        ClipboardImageStore.cleanup(keeping: Set(entries.compactMap(\.imageFile)))
+        ClipboardImageStore.cleanup(keeping: Set(entries.compactMap(\.imageFile)),
+                                    filePaths: Set(entries.flatMap(\.filePaths)))
         // A history read from the legacy blob migrates right away instead of
         // waiting for the next copy: launching once is enough to leave
         // UserDefaults behind.
@@ -906,7 +909,8 @@ final class ClipboardHistoryService: ObservableObject {
                        encoded.entries != snapshot {
                         self.entries = encoded.entries
                     }
-                    ClipboardImageStore.cleanup(keeping: Set(self.entries.compactMap(\.imageFile)))
+                    ClipboardImageStore.cleanup(keeping: Set(self.entries.compactMap(\.imageFile)),
+                                                filePaths: Set(self.entries.flatMap(\.filePaths)))
                 }
             }
             guard let url = Self.storeURL else {
@@ -1014,6 +1018,7 @@ final class ClipboardHistoryService: ObservableObject {
     }
 
     func toggleHistoryWindow() {
+        if NotchSupport.routesClipboardWindow(), NotchService.shared.showClipboard(toggle: true) { return }
         if panel?.isVisible == true {
             hideHistoryWindow()
         } else {
@@ -1021,7 +1026,8 @@ final class ClipboardHistoryService: ObservableObject {
         }
     }
 
-    func showHistoryWindow() {
+    func showHistoryWindow(preferNotch: Bool = true) {
+        if preferNotch, NotchSupport.routesClipboardWindow(), NotchService.shared.showClipboard() { return }
         let panel = ensurePanel()
         rememberPasteTarget()
         quickWindowPresentationID = UUID()
@@ -1043,7 +1049,7 @@ final class ClipboardHistoryService: ObservableObject {
         clearQuickBatchSelection()
     }
 
-    private func rememberPasteTarget() {
+    func rememberPasteTarget() {
         let ownBundleID = Bundle.main.bundleIdentifier
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.bundleIdentifier != ownBundleID,
@@ -1243,7 +1249,10 @@ final class ClipboardHistoryService: ObservableObject {
         }
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseEvents) { [weak self, weak panel] event in
             guard let self, let panel, panel.isVisible else { return }
-            if event.windowNumber != panel.windowNumber, !Self.mouseIsInside(panel) {
+            if event.windowNumber != panel.windowNumber, !Self.mouseIsInside(panel),
+               // Every key on the Accessibility Keyboard is a click outside this
+               // panel. Dismissing on those makes the panel impossible to type into.
+               !AssistiveKeyboard.ownsCocoaPoint(NSEvent.mouseLocation) {
                 self.hideHistoryWindow()
             }
         }
@@ -1254,7 +1263,8 @@ final class ClipboardHistoryService: ObservableObject {
         ) { [weak self] notification in
             guard let self,
                   let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app.bundleIdentifier != Bundle.main.bundleIdentifier
+                  app.bundleIdentifier != Bundle.main.bundleIdentifier,
+                  app.bundleIdentifier != AssistiveKeyboard.bundleID
             else { return }
             self.hideHistoryWindow()
         }
@@ -1392,10 +1402,17 @@ enum ClipboardImageStore {
         if let cached = fileIcons.object(forKey: path as NSString) { return cached }
         let icon = NSWorkspace.shared.icon(forFile: path)
         fileIcons.setObject(icon, forKey: path as NSString)
+        fileIconPaths = fileIconPaths.filter { fileIcons.object(forKey: $0 as NSString) != nil }
+        fileIconPaths.insert(path)
         return icon
     }
 
-    private static let fileIcons = NSCache<NSString, NSImage>()
+    private static var fileIconPaths: Set<String> = []
+    private static let fileIcons: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 120
+        return cache
+    }()
 
     static func isImageFile(atPath path: String) -> Bool {
         ClipboardHistoryImageSupport.isImageFilePath(path)
@@ -1452,7 +1469,11 @@ enum ClipboardImageStore {
         return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
-    static func cleanup(keeping names: Set<String>) {
+    static func cleanup(keeping names: Set<String>, filePaths: Set<String>) {
+        for path in fileIconPaths where !filePaths.contains(path) {
+            fileIcons.removeObject(forKey: path as NSString)
+        }
+        fileIconPaths.formIntersection(filePaths)
         guard let directory,
               let files = try? FileManager.default.contentsOfDirectory(at: directory,
                                                                        includingPropertiesForKeys: nil)

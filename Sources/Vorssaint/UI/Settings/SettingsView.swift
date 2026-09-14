@@ -348,6 +348,7 @@ struct SettingsView: View {
         case .general: GeneralSettings()
         case .features: FeatureHubSettings()
         case .textSnippets: TextSnippetsSettings()
+        case .notch: NotchSettings()
         case .radialMenu: RadialMenuSettings()
         case .commandBar: CommandBarSettings()
         case .energy: EnergySettings()
@@ -757,27 +758,32 @@ struct EnergySettings: View {
                             SettingsCaptionText(displayControlFailureText(failure, strings: strings))
                                 .foregroundStyle(.red)
                         }
-                        SettingsToggleWithCaption(title: strings.keysToggle,
-                                                  caption: strings.keysCaption,
-                                                  isOn: $brightnessKeysEnabled)
-                            .onChange(of: brightnessKeysEnabled) { _, isOn in
-                                if isOn { Permissions.shared.requestAccessibility() }
-                                BrightnessService.shared.syncWithPreferences()
-                            }
-                        if brightness.brightnessOSDSupported {
-                            SettingsToggleWithCaption(title: strings.osdToggle,
-                                                      caption: strings.osdCaption,
-                                                      isOn: $brightnessOSDEnabled)
-                                .onChange(of: brightnessOSDEnabled) { _, isOn in
+                        DisclosureGroup {
+                            SettingsToggleWithCaption(title: strings.keysToggle,
+                                                      caption: strings.keysCaption,
+                                                      isOn: $brightnessKeysEnabled)
+                                .onChange(of: brightnessKeysEnabled) { _, isOn in
                                     if isOn { Permissions.shared.requestAccessibility() }
                                     BrightnessService.shared.syncWithPreferences()
                                 }
+                            DisplayBrightnessShortcutControls()
+                            if brightness.brightnessOSDSupported {
+                                SettingsToggleWithCaption(title: strings.osdToggle,
+                                                          caption: strings.osdCaption,
+                                                          isOn: $brightnessOSDEnabled)
+                                    .onChange(of: brightnessOSDEnabled) { _, isOn in
+                                        if isOn { Permissions.shared.requestAccessibility() }
+                                        BrightnessService.shared.syncWithPreferences()
+                                    }
+                            }
+                            if (brightnessKeysEnabled || brightnessOSDEnabled),
+                               !permissions.accessibility {
+                                PermissionRow(kind: .accessibility)
+                            }
+                            SettingsCaptionText(strings.externalCaption)
+                        } label: {
+                            Text(FeatureStrings.recorder(l10n.language).moreOptions)
                         }
-                        if (brightnessKeysEnabled || brightnessOSDEnabled),
-                           !permissions.accessibility {
-                            PermissionRow(kind: .accessibility)
-                        }
-                        SettingsCaptionText(strings.externalCaption)
                     }
                 }
                 .settingsSectionAnchor(.brightness)
@@ -1210,6 +1216,7 @@ struct SwitcherSettings: View {
     @AppStorage(DefaultsKey.switcherMinimizedPlacement) private var switcherMinimizedPlacement = WindowSwitchMinimizedPlacement.normal.rawValue
     @AppStorage(DefaultsKey.switcherShowFullscreenWindows) private var switcherShowFullscreenWindows = true
     @AppStorage(DefaultsKey.switcherScreenPlacement) private var switcherScreenPlacement = SwitcherScreenPlacement.fallback.rawValue
+    @AppStorage(DefaultsKey.switcherCurrentDisplayOnly) private var switcherCurrentDisplayOnly = false
     @AppStorage(DefaultsKey.switcherCurrentSpaceOnly) private var switcherCurrentSpaceOnly = false
     @AppStorage(DefaultsKey.switcherSearchPinEnabled) private var switcherSearchPinEnabled = false
     @AppStorage(DefaultsKey.switcherShowShortcutHints) private var switcherShowShortcutHints = true
@@ -1221,6 +1228,7 @@ struct SwitcherSettings: View {
     @AppStorage(DefaultsKey.dockClickMinimize) private var dockClickMinimize = false
     @AppStorage(DefaultsKey.dockClickHide) private var dockClickHide = false
     @AppStorage(DefaultsKey.dockClickCycleWindows) private var dockClickCycleWindows = false
+    @AppStorage(DefaultsKey.minimalWindowPreviews) private var minimalPreviews = false
     @AppStorage(DefaultsKey.previewSize) private var previewSize = "normal"
 
     private var switcherEngaged: Bool { switcherEnabled && AppFeature.switcher.isAvailable }
@@ -1359,6 +1367,12 @@ struct SwitcherSettings: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    Toggle(l10n.s.switcherCurrentDisplayOnly, isOn: $switcherCurrentDisplayOnly)
+                        .disabled(!switcherEnabled)
+                    Text(l10n.s.switcherCurrentDisplayOnlyCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     Toggle(l10n.s.switcherCurrentSpaceOnly, isOn: $switcherCurrentSpaceOnly)
                         .disabled(!switcherEnabled)
                     Text(l10n.s.switcherCurrentSpaceOnlyCaption)
@@ -1474,6 +1488,8 @@ struct SwitcherSettings: View {
                     .onChange(of: previewSize) { _, _ in
                         AppSwitcher.shared.syncWithPreferences()
                     }
+                    Toggle(l10n.s.minimalWindowPreviews, isOn: $minimalPreviews)
+                    SettingsCaptionText(l10n.s.minimalWindowPreviewsCaption)
                     WindowPreviewExclusionsList()
                 } header: {
                     Text(FeatureStrings.windowPreviewExclusions(l10n.language).sectionTitle)
