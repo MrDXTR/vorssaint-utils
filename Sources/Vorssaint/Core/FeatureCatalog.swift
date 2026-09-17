@@ -339,12 +339,12 @@ extension AppFeature {
     }
 
     /// Registered defaults preserve existing features on update. New opt-in
-    /// features and explicit betas ship uninstalled.\
+    /// features and explicit betas ship uninstalled.
     static var availabilityDefaults: [String: Any] {
         Dictionary(uniqueKeysWithValues: allCases.map {
             ($0.availabilityKey,
              $0 != .focusFollowsMouse && $0 != .fanControl && $0 != .diskImageInstaller
-                && $0 != .killProcess)
+                && $0 != .killProcess && $0 != .portManager)
         })
     }
 

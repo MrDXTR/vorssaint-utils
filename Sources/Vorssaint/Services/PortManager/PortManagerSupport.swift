@@ -28,7 +28,11 @@ enum PortManagerSupport {
             case "P": proto = value
             case "n":
                 address = value
-                if let last = value.split(separator: ":").last, let parsed = Int(last) { port = parsed }
+                guard let last = value.split(separator: ":").last, let parsed = Int(last) else {
+                    port = 0
+                    continue
+                }
+                port = parsed
                 if pid > 0 && port > 0 {
                     let key = "\(proto)|\(port)|\(address)|\(pid)"
                     if seen.insert(key).inserted {

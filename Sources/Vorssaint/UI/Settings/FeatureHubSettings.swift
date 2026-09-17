@@ -843,7 +843,7 @@ extension AppFeature {
                 + FeatureStrings.whatsAppDownloads(L10n.shared.language).hubDescription
         case .uninstaller: return hub.descUninstaller
         case .killProcess: return FeatureStrings.killProcess(L10n.shared.language).hubDescription
-        case .portManager: return FeatureStrings.portManager(L10n.shared.language).listeningCaption
+        case .portManager: return FeatureStrings.portManager(L10n.shared.language).hubDescription
         case .homebrew: return hub.descHomebrew
         case .appUpdates: return FeatureStrings.appUpdates(L10n.shared.language).hubDescription
         case .monitorCPU: return hub.descMonitorCPU

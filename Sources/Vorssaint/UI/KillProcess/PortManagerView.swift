@@ -13,16 +13,16 @@ struct PortManagerView: View {
     private var strings: PortManagerFeatureStrings { FeatureStrings.portManager(l10n.language) }
 
     var body: some View {
+        if let onClose {
+            PanelPortManagerView(onClose: onClose)
+        } else {
+            settingsBody
+        }
+    }
+
+    private var settingsBody: some View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
-                if let onClose {
-                    Button(action: onClose) {
-                        Image(systemName: "chevron.backward.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(strings.back)
-                }
                 Image(systemName: "network")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
@@ -37,34 +37,28 @@ struct PortManagerView: View {
                     .buttonStyle(.plain).help(strings.refresh)
             }
             .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
-            HStack(spacing: 8) { Image(systemName: "magnifyingglass").foregroundStyle(.secondary); TextField(strings.filter, text: $service.query).textFieldStyle(.plain) }
-                .padding(9).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
-                .padding(.horizontal, 14).padding(.bottom, 8)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField(strings.filter, text: $service.query).textFieldStyle(.plain)
+                if service.isRefreshing {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .padding(9).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+            .padding(.horizontal, 14).padding(.bottom, 8)
             Divider()
             if service.filteredEntries.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "network.slash").font(.system(size: 25)).foregroundStyle(.tertiary)
-                    Text(strings.empty).font(.callout).foregroundStyle(.secondary)
-                    Text(strings.emptyHint).font(.caption).foregroundStyle(.tertiary)
+                if service.hasLoadedOnce {
+                    emptyState
+                } else {
+                    loadingState
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if onClose == nil {
+            } else {
                 List(service.filteredEntries) { entry in
                     portRow(entry)
                         .listRowSeparator(.hidden)
                 }
                 .listStyle(.inset)
-            } else {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(service.filteredEntries) { entry in
-                            portRow(entry)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                }
-                .frame(height: 245)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -80,6 +74,24 @@ struct PortManagerView: View {
             Text(String(format: strings.terminateMessageFormat,
                         pending?.port ?? 0, pending?.pid ?? 0))
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "network.slash").font(.system(size: 25)).foregroundStyle(.tertiary)
+            Text(strings.empty).font(.callout).foregroundStyle(.secondary)
+            Text(strings.emptyHint).font(.caption).foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var loadingState: some View {
+        VStack {
+            Spacer()
+            ProgressView().controlSize(.small)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func portRow(_ entry: PortManagerEntry) -> some View {

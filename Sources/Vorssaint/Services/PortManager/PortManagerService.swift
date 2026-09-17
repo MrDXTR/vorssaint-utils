@@ -8,6 +8,7 @@ final class PortManagerService: ObservableObject {
     @Published private(set) var entries: [PortManagerEntry] = []
     @Published var query = ""
     @Published private(set) var isRefreshing = false
+    @Published private(set) var hasLoadedOnce = false
 
     var filteredEntries: [PortManagerEntry] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -21,14 +22,17 @@ final class PortManagerService: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Self.snapshot()
             DispatchQueue.main.async {
-                if let result { self.entries = result } 
+                if let result {
+                    self.entries = result
+                    self.hasLoadedOnce = true
+                }
                 self.isRefreshing = false
             }
         }
     }
 
     func terminate(_ entry: PortManagerEntry, force: Bool) {
-        guard let startedAt = entry.startedAt else { return }
+        guard AppFeature.killProcess.isAvailable, let startedAt = entry.startedAt else { return }
         KillProcessService.shared.kill(pid: entry.pid,
                                        name: entry.processName,
                                        startedAt: startedAt,
@@ -56,5 +60,4 @@ final class PortManagerService: ObservableObject {
         if result.status != 0 && parsed.isEmpty { return nil }
         return parsed
     }
-
 }

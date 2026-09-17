@@ -645,7 +645,7 @@ struct UtilitiesSection: View {
                     showAppUpdatesPanel = false
                 }
             } else if showPortManagerPanel {
-                PortManagerView {
+                PanelPortManagerView {
                     PanelInteractionState.shared.viewKeepsPopoverOpen = false
                     showPortManagerPanel = false
                 }
