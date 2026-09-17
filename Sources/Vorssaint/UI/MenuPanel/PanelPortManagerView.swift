@@ -20,6 +20,15 @@ struct PanelPortManagerView: View {
             header
             controls
             entriesList
+            if notchPresentation && !service.filteredEntries.isEmpty {
+                HStack {
+                    Spacer()
+                    Text(String(format: strings.openFormat, service.filteredEntries.count))
+                        .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 4)
+            }
         }
         .onAppear {
             PanelInteractionState.shared.viewKeepsPopoverOpen = true
@@ -70,33 +79,54 @@ struct PanelPortManagerView: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                Text(strings.listeningCaption)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(String(format: strings.openFormat, service.filteredEntries.count))
-                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-            HStack(spacing: 6) {
-                TextField(strings.filter, text: $service.query)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
-                Button {
-                    service.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 24, height: 22)
+        Group {
+            if notchPresentation {
+                HStack(spacing: 6) {
+                    TextField(strings.filter, text: $service.query)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                    Button {
+                        service.refresh()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 24, height: 22)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .help(strings.refresh)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .help(strings.refresh)
+                .panelCard()
+            } else {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack {
+                        Text(strings.listeningCaption)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(String(format: strings.openFormat, service.filteredEntries.count))
+                            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 6) {
+                        TextField(strings.filter, text: $service.query)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11))
+                        Button {
+                            service.refresh()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 11, weight: .semibold))
+                                .frame(width: 24, height: 22)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .help(strings.refresh)
+                    }
+                }
+                .panelCard()
             }
         }
-        .panelCard()
     }
 
     @ViewBuilder
@@ -116,7 +146,7 @@ struct PanelPortManagerView: View {
                 }
                 .padding(.bottom, notchPresentation ? 14 : 0)
             }
-            .frame(maxHeight: notchPresentation ? 150 : 260)
+            .frame(maxHeight: notchPresentation ? 175 : 260)
         }
     }
 
