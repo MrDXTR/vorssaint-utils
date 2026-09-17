@@ -80,6 +80,7 @@ final class ScreenshotQuickPreviewController {
             dragItem: { [weak self] in
                 guard let self else { return NSItemProvider() }
                 return ScreenshotService.dragItemProvider(image: self.capture.image,
+                                                          scale: self.capture.scale,
                                                           strings: self.strings)
                     ?? NSItemProvider()
             },
@@ -90,7 +91,7 @@ final class ScreenshotQuickPreviewController {
             hoverChanged: { [weak self] inside in self?.hoverChanged(inside) },
             embedded: wantsNotch)
         if wantsNotch, NotchService.shared.presentCapture(
-            id: presentationID, content: AnyView(content),
+            id: presentationID, content: AnyView(content), height: Self.size(showingLink: model.sharedRecord != nil).height,
             fallback: { [weak self] in
                 guard let self else { return }
                 self.shownInNotch = false
@@ -107,7 +108,7 @@ final class ScreenshotQuickPreviewController {
             return
         }
         let host = NSHostingController(rootView: content)
-        let size = Self.size(showingLink: false)
+        let size = Self.size(showingLink: model.sharedRecord != nil)
         let panel = ScreenshotQuickPreviewPanel(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -128,10 +129,10 @@ final class ScreenshotQuickPreviewController {
         self.panel = panel
         installKeyMonitor(for: panel)
         panel.orderFrontRegardless()
-        // Opt-in only. Taking the keyboard on presentation is the bug #1089
-        // reported, so by default a click is still the hand-off; people who
-        // reach for Escape or Enter the moment a capture lands can trade
-        // that for shortcuts that are armed as soon as the preview shows.
+        // On by default: leaving the keyboard behind after a capture is what
+        // #1463 reported, since Command-C and Command-S did nothing until a
+        // click. Taking it costs the caret in the app being typed into
+        // (#1089), so More options can hand that trade back to a click.
         if UserDefaults.standard.bool(forKey: DefaultsKey.screenshotPreviewTakesFocus) {
             panel.makeKey()
         }
@@ -355,6 +356,10 @@ final class ScreenshotQuickPreviewController {
     }
 
     private func resizePanel(showingLink: Bool) {
+        if shownInNotch {
+            NotchService.shared.updateCaptureHeight(id: presentationID, height: Self.size(showingLink: showingLink).height)
+            return
+        }
         panel?.setFrame(previewFrame(for: Self.size(showingLink: showingLink)),
                         display: true,
                         animate: true)

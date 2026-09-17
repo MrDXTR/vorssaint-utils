@@ -12,11 +12,13 @@ struct NotchSettings: View {
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var features = FeatureRuntime.shared
     @ObservedObject private var permissions = Permissions.shared
-    @AppStorage(DefaultsKey.notchGesturesEnabled) private var gesturesEnabled = false
+    @ObservedObject private var notch = NotchService.shared
+    @AppStorage(DefaultsKey.notchGesturesEnabled) private var gesturesEnabled = true
     @AppStorage(DefaultsKey.notchKeyboardLight) private var keyboardLight = false
     @AppStorage(DefaultsKey.notchNotificationsEnabled) private var notificationsEnabled = false
     @AppStorage(DefaultsKey.notchDismissNativeNotifications) private var dismissNativeNotifications = false
     @AppStorage(DefaultsKey.notchTimerEnabled) private var timerEnabled = true
+    @AppStorage(DefaultsKey.notchTimerSoundEnabled) private var timerSoundEnabled = true
     @AppStorage(DefaultsKey.notchCameraEnabled) private var cameraEnabled = false
     @AppStorage(DefaultsKey.notchAccessoriesEnabled) private var accessoriesEnabled = false
     @AppStorage(DefaultsKey.notchCalendarEnabled) private var calendarEnabled = true
@@ -26,30 +28,34 @@ struct NotchSettings: View {
     @AppStorage(DefaultsKey.notchEnabled) private var enabled = false
     @AppStorage(DefaultsKey.notchDisplay) private var display = NotchDisplay.automatic.rawValue
     @AppStorage(DefaultsKey.notchOpenOnHover) private var hover = true
+    @AppStorage(DefaultsKey.notchHideUntilHover) private var hideUntilHover = false
+    @AppStorage(DefaultsKey.notchHoverDelay) private var hoverDelay = NotchSupport.defaultHoverDelay
+    @AppStorage(DefaultsKey.notchReturnHome) private var returnHome = false
+    @AppStorage(DefaultsKey.notchHomeModule) private var homeModule = NotchModule.controls.rawValue
     @AppStorage(DefaultsKey.notchHiddenModules) private var hidden = ""
     @AppStorage(DefaultsKey.notchModuleOrder) private var order = ""
     @AppStorage(DefaultsKey.notchVolume) private var volume = true
     @AppStorage(DefaultsKey.notchBrightness) private var brightness = true
     @AppStorage(DefaultsKey.notchBattery) private var battery = true
     @AppStorage(DefaultsKey.notchClipboard) private var clipboard = false
-    @AppStorage(DefaultsKey.notchClipboardWindow) private var clipboardWindow = false
+    @AppStorage(DefaultsKey.notchClipboardWindow) private var clipboardWindow = true
     @AppStorage(DefaultsKey.screenshotDefaultAction) private var captureAction = ""
     @AppStorage(DefaultsKey.notchCapture) private var capture = false
     @AppStorage(DefaultsKey.notchShowPlayingMusic) private var showPlayingMusic = true
-    @AppStorage(DefaultsKey.notchIdleContent) private var idle = NotchIdleContent.none.rawValue
+    @AppStorage(DefaultsKey.notchIdleContent) private var idle = NotchIdleContent.music.rawValue
     @AppStorage(DefaultsKey.notchHiddenControls) private var hiddenControls = NotchControlItem.defaultHidden
     @AppStorage(DefaultsKey.notchControlOrder) private var controlOrder = ""
     @AppStorage(DefaultsKey.notchShowInCaptures) private var showInCaptures = true
-    @AppStorage(DefaultsKey.notchSize) private var size = NotchSize.compact.rawValue
+    @AppStorage(DefaultsKey.notchSize) private var size = NotchSize.spacious.rawValue
     @AppStorage(DefaultsKey.notchCustomWidth) private var customWidth = NotchSize.defaultWidth
     @AppStorage(DefaultsKey.notchCustomHeight) private var customHeight = NotchSize.defaultHeight
-    @AppStorage(DefaultsKey.notchHapticFeedback) private var hapticFeedback = false
+    @AppStorage(DefaultsKey.notchHapticFeedback) private var hapticFeedback = true
     @AppStorage(DefaultsKey.notchShelf) private var shelfWindow = true
     @AppStorage(DefaultsKey.notchDragReveal) private var dragReveal = true
     @AppStorage(DefaultsKey.notchCaptureControls) private var captureControls = true
     @AppStorage(DefaultsKey.notchQuickPanel) private var quickPanel = true
     @AppStorage(DefaultsKey.notchAppPanel) private var appPanel = true
-    @AppStorage(DefaultsKey.notchHoverExpands) private var hoverExpand = false
+    @AppStorage(DefaultsKey.notchHoverExpands) private var hoverExpand = true
     @AppStorage(DefaultsKey.notchQuickAccessLayout) private var accessData = Data()
     @State private var tab = NotchSettingsTab.layout
     @State private var selectedModule = NotchModule.controls
@@ -60,8 +66,8 @@ struct NotchSettings: View {
 
     private var configuration: [String] {
         [String(enabled), String(calendarEnabled), String(notificationsEnabled), String(dismissNativeNotifications), String(gesturesEnabled), String(lyricsEnabled), String(lyricsOnline), String(queueEnabled), String(showPlayingMusic), idle, hiddenControls, controlOrder, size,
-         String(timerEnabled), String(cameraEnabled), String(accessoriesEnabled), String(customWidth), String(customHeight), String(hapticFeedback), String(shelfWindow), String(dragReveal), String(captureControls), String(quickPanel), String(appPanel), String(hoverExpand), display, String(hover), hidden, order, String(volume),
-         String(brightness), String(keyboardLight), String(battery), String(clipboard), String(clipboardWindow), String(capture), captureAction, String(showInCaptures)]
+         String(timerEnabled), String(timerSoundEnabled), String(cameraEnabled), String(accessoriesEnabled), String(customWidth), String(customHeight), String(hapticFeedback), String(shelfWindow), String(dragReveal), String(captureControls), String(quickPanel), String(appPanel), String(hoverExpand), String(hideUntilHover), display, String(hover), hidden, order, String(volume),
+         String(brightness), String(keyboardLight), String(battery), String(clipboard), String(clipboardWindow), String(capture), captureAction, String(showInCaptures), String(returnHome), homeModule]
     }
 
     private var access: Binding<NotchQuickAccessConfiguration> {
@@ -84,6 +90,14 @@ struct NotchSettings: View {
                 Spacer(minLength: 12)
                 Toggle(text.enable, isOn: $enabled).labelsHidden().toggleStyle(.switch)
                     .disabled(!AppFeature.notch.isAvailable).accessibilityLabel(text.enable)
+            }
+            if enabled, AppFeature.notch.isAvailable, !(hover && hideUntilHover), !notch.geometry.isNotched, !permissions.accessibility {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(text.menuBarAccessHint)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    PermissionRow(kind: .accessibility)
+                }
             }
             HStack {
                 Picker(text.title, selection: $tab) {
@@ -203,6 +217,9 @@ struct NotchSettings: View {
                 Button(calendar.allow, action: permissions.requestCalendar).disabled(permissions.requestingCalendar)
                 Button(calendar.settings, action: permissions.openCalendarSettings)
             }
+        case .timer:
+            Toggle(FeatureStrings.notchActivities(l10n.language).soundEnabled, isOn: $timerSoundEnabled)
+                .disabled(!AppFeature.notchTimer.isAvailable)
         case .camera:
             Text(FeatureStrings.notchActivities(l10n.language).cameraHint).font(.callout).foregroundStyle(.secondary)
             if permissions.camera == .granted {
@@ -214,6 +231,10 @@ struct NotchSettings: View {
         case .files:
             destination(text.files, symbol: "tray.full", value: $shelfWindow, available: AppFeature.shelf.isAvailable)
             if shelfWindow { Toggle(text.dragReveal, isOn: $dragReveal) }
+            if AppFeature.mediaTools.isAvailable {
+                Text(FeatureStrings.notchFiles(l10n.language).optimizeDropHint)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         case .clipboard:
             destination(FeatureStrings.clipboard(l10n.language).title, symbol: "doc.on.clipboard", value: $clipboardWindow, available: AppFeature.clipboardHistory.isAvailable)
             Toggle(text.clipboardActivity, isOn: $clipboard)
@@ -258,14 +279,30 @@ struct NotchSettings: View {
     private var behaviorPage: some View {
         VStack(alignment: .leading, spacing: 20) {
             section(editor.opening) {
-                HStack(spacing: 8) {
-                    choice(editor.clickOpen, symbol: "cursorarrow", selected: !hover) { hover = false }
-                    choice(editor.hoverPreview, symbol: "rectangle.topthird.inset.filled", selected: hover && !hoverExpand) { hover = true; hoverExpand = false }
-                    choice(editor.hoverExpand, symbol: "arrow.up.left.and.arrow.down.right", selected: hover && hoverExpand) { hover = true; hoverExpand = true }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    choice(editor.clickOpen, symbol: "cursorarrow", selected: !hover) { hideUntilHover = false; hover = false }
+                    choice(editor.hoverPreview, symbol: "rectangle.topthird.inset.filled", selected: hover && !hoverExpand && !hideUntilHover) { hideUntilHover = false; hover = true; hoverExpand = false }
+                    choice(editor.hoverExpand, symbol: "arrow.up.left.and.arrow.down.right", selected: hover && hoverExpand && !hideUntilHover) { hideUntilHover = false; hover = true; hoverExpand = true }
+                    choice(editor.hiddenUntilHover, symbol: "eye.slash", selected: hover && hideUntilHover) { hover = true; hoverExpand = true; hideUntilHover = true }
                 }
+                if hover { hoverDelayControl }
                 Toggle(FeatureStrings.notchGestures(l10n.language).title, isOn: $gesturesEnabled).disabled(!AppFeature.notchGestures.isAvailable)
                 if gesturesEnabled { Text(FeatureStrings.notchGestures(l10n.language).hint).font(.caption).foregroundStyle(.secondary) }
                 Toggle(text.hapticFeedback, isOn: $hapticFeedback)
+                Picker(editor.reopening, selection: Binding(get: {
+                    returnHome ? (NotchModule(rawValue: homeModule) ?? .controls).rawValue : ""
+                }, set: { value in
+                    returnHome = !value.isEmpty
+                    if returnHome { homeModule = value }
+                })) {
+                    Text(editor.lastPage).tag("")
+                    ForEach(NotchSupport.modules()) { module in
+                        Text(module.title(l10n.language)).tag(module.rawValue)
+                    }
+                    if let saved = NotchModule(rawValue: homeModule), !NotchSupport.modules().contains(saved) {
+                        Text(saved.title(l10n.language)).tag(homeModule).disabled(true)
+                    }
+                }
             }
             section(text.display) {
                 HStack(spacing: 8) {
@@ -284,6 +321,24 @@ struct NotchSettings: View {
             section(editor.privacy) {
                 Toggle(text.showInCaptures, isOn: $showInCaptures)
             }
+        }
+    }
+
+    private var hoverDelayControl: some View {
+        let value = Binding(get: { NotchSupport.sanitizedHoverDelay(hoverDelay) },
+                            set: { hoverDelay = NotchSupport.sanitizedHoverDelay($0) })
+        let formatted = String(format: editor.activationTimeFormat, locale: Locale(identifier: l10n.language.rawValue), value.wrappedValue)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(editor.activationTime)
+                Spacer()
+                Text(formatted).monospacedDigit().foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: NotchSupport.hoverDelayRange, step: 0.05) {
+                Text(editor.activationTime)
+            }.labelsHidden().accessibilityValue(formatted)
+            Text(editor.activationTimeHint).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

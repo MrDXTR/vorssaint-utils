@@ -29,14 +29,25 @@ struct NotchView: View {
     }
 
     private var shape: NotchShape {
-        NotchShape(attached: service.geometry.isNotched,
-                   radius: min(28, service.surfaceSize.height / 2))
+        NotchShape(attached: true,
+                   radius: NotchLayout.surfaceRadius(height: service.surfaceSize.height))
     }
 
     @ViewBuilder private var surface: some View {
         if let options = service.captureControls {
-            NotchCaptureControlsView(options: options, service: service)
-                .padding(.horizontal, 18).padding(.top, service.geometry.safeContentTop)
+            if service.captureControlsCollapsed {
+                HStack(spacing: 0) {
+                    Image(systemName: options.selectedTool.systemImageName).frame(width: 28)
+                    Color.clear.frame(width: service.geometry.cameraWidth)
+                    Image(systemName: "chevron.down").frame(width: 28)
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .frame(maxHeight: .infinity)
+                .accessibilityHidden(true)
+            } else {
+                NotchCaptureControlsView(options: options, service: service)
+                    .padding(.horizontal, 18).padding(.top, service.geometry.safeContentTop)
+            }
         } else if service.expanded {
             expanded
         } else if service.dragPlaceholder {
@@ -182,6 +193,7 @@ struct NotchView: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            NotchUpdateControl(action: service.showUpdate)
             if service.selected == .tools, !service.showingAppPanel, !service.showingSections, service.selectedMetric == nil,
                !service.modules.isEmpty, launcher.activeUtility == nil {
                 NotchIconButton(symbol: launcher.isEditing ? "checkmark" : "slider.horizontal.3",
@@ -213,6 +225,7 @@ struct NotchView: View {
             NotchIconButton(symbol: "chevron.up", title: text.collapse, action: service.collapse)
         }
         .frame(height: NotchLayout.headerHeight)
+        .onAppear { UpdateService.shared.checkIfStale() }
     }
 
     private var navigation: some View {

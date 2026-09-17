@@ -48,25 +48,32 @@ struct NotchEqualizerBars: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var animates: Bool { isPlaying && !reduceMotion }
+    private var count: Int { max(1, bars) }
+    private var spacing: CGFloat { barWidth * 0.85 }
+    private var width: CGFloat { CGFloat(count) * barWidth + CGFloat(count - 1) * spacing }
 
     var body: some View {
+        // Keep the drawing surface fixed while bar heights change, so ticks
+        // redraw the contents without resizing individual views.
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !animates)) { context in
-            HStack(alignment: .center, spacing: barWidth * 0.85) {
-                ForEach(0..<max(1, bars), id: \.self) { index in
-                    Capsule(style: .continuous)
-                        .fill(tint)
-                        .frame(width: barWidth,
-                               height: barHeight(index, at: context.date.timeIntervalSinceReferenceDate))
+            let phase = context.date.timeIntervalSinceReferenceDate
+            Canvas { canvas, size in
+                for index in 0..<count {
+                    let bar = barHeight(index, at: phase)
+                    let rect = CGRect(x: CGFloat(index) * (barWidth + spacing), y: (size.height - bar) / 2,
+                                      width: barWidth, height: bar)
+                    canvas.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2, style: .continuous),
+                                with: .color(tint))
                 }
             }
-            .frame(height: height)
         }
+        .frame(width: width, height: height)
         .accessibilityHidden(true)
     }
 
     private func barHeight(_ index: Int, at phase: Double) -> CGFloat {
         guard animates else { return barWidth }
-        let center = Double(max(1, bars) - 1) / 2
+        let center = Double(count - 1) / 2
         let distance = abs(Double(index) - center) / max(1, center)
         let envelope = pow(1 - distance, 1.5)
         let wave = (sin(phase * (5.2 + Double(index) * 0.61) + Double(index) * 1.7) + 1) / 2
@@ -196,6 +203,7 @@ struct NotchTileGrid<Item: Identifiable, Content: View>: View {
 struct NotchControlSurface: ViewModifier {
     let cornerRadius: CGFloat
     var selected = false
+    var interactive = true
     @AppStorage(DefaultsKey.liquidGlassEnabled) private var glass = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -206,7 +214,7 @@ struct NotchControlSurface: ViewModifier {
 #if compiler(>=6.2)
             if #available(macOS 26, *), glass, !reduceTransparency {
                 content.background(.white.opacity(selected ? 0.12 : 0.065), in: shape)
-                    .glassEffect(.regular.interactive(), in: shape)
+                    .glassEffect(.regular.interactive(interactive), in: shape)
             } else {
                 content.background(.white.opacity(selected ? 0.12 : 0.065), in: shape)
             }

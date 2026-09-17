@@ -1,17 +1,91 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Vorssaint
 
+import AppKit
 import Foundation
 
 enum NotchActivityTests {
     static func run(expect: (Bool, String) -> Void) {
         timerContracts(expect: expect)
+        alertContracts(expect: expect)
         pomodoroContracts(expect: expect)
         rulerContracts(expect: expect)
         compactTimerContracts(expect: expect)
+        compactMarginContracts(expect: expect)
         accessoryContracts(expect: expect)
         PeripheralBatteryLifecycleTests.run(expect: expect)
         gateContracts(expect: expect)
+    }
+
+    private static func alertContracts(expect: (Bool, String) -> Void) {
+        let suite = "com.vorssaint.tests.timer-alert"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        expect(NotchTimerSupport.isSoundEnabled(in: defaults), "timer sound is enabled by default")
+        for enabled in [false, true] {
+            defaults.set(enabled, forKey: DefaultsKey.notchTimerSoundEnabled)
+            expect(NotchTimerSupport.isSoundEnabled(in: defaults) == enabled,
+                   "the sound preference survives reload")
+        }
+        expect(Defaults.registeredDefaults[DefaultsKey.notchTimerSoundEnabled] as? Bool == true
+               && SettingsBackupSupport.exportKeys().contains(DefaultsKey.notchTimerSoundEnabled),
+               "the sound preference is registered and included in settings backup")
+        expect(NotchTimerAlert.maximumDuration == .seconds(300), "an alarm is limited to five minutes")
+        var sounds = 0, stops = 0
+        var elapsed: Duration = .zero
+        let alert = NotchTimerAlert(interval: .milliseconds(5), now: { .now.advanced(by: elapsed) },
+                                   sound: { sounds += 1 }, stopSound: { stops += 1 })
+        defer { alert.stop() }
+        func wait(until predicate: () -> Bool) {
+            let deadline = Date().addingTimeInterval(1)
+            while !predicate() && Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.002))
+            }
+        }
+        func settle() {
+            let end = Date().addingTimeInterval(0.04)
+            wait { Date() >= end }
+        }
+        alert.start(enabled: false)
+        settle()
+        expect(sounds == 0, "a timer completed with sound disabled stays silent")
+        alert.start(enabled: true)
+        expect(sounds == 1, "an enabled sound alarm alerts immediately")
+        alert.start(enabled: true)
+        expect(sounds == 1, "preference synchronization does not duplicate a pending alarm")
+        wait { sounds >= 3 }
+        expect(sounds >= 3, "an unacknowledged sound alarm repeats")
+        alert.start(enabled: false)
+        let mutedSounds = sounds
+        settle()
+        expect(sounds == mutedSounds && stops > 0, "disabling sound stops current playback and repetition")
+        elapsed = .seconds(299)
+        alert.start(enabled: true)
+        expect(sounds == mutedSounds + 1, "sound can resume within the original alarm budget")
+        alert.suspend()
+        let suspendedSounds = sounds
+        settle()
+        expect(sounds == suspendedSounds, "suspension cancels sound playback")
+        alert.start(enabled: true)
+        elapsed = .seconds(301)
+        let expirationStops = stops
+        wait { stops > expirationStops }
+        let expiredSounds = sounds
+        alert.start(enabled: false)
+        alert.start(enabled: true)
+        alert.suspend()
+        alert.start(enabled: true)
+        settle()
+        expect(stops > expirationStops && sounds == expiredSounds,
+               "five minutes stop playback; preference changes and suspension cannot restart an expired alarm")
+        alert.stop()
+        alert.start(enabled: true)
+        expect(sounds == expiredSounds + 1, "a new timer phase gets a fresh alert budget")
+        alert.stop()
+        let cancelledSounds = sounds
+        settle()
+        expect(sounds == cancelledSounds, "dismissal prevents delayed playback")
     }
 
     private static func timerContracts(expect: (Bool, String) -> Void) {
@@ -39,6 +113,15 @@ enum NotchActivityTests {
         expect(session.duration == 10_800, "corrupt duration input stays within three hours")
         expect(NotchTimerSupport.clockText(0.01) == "00:01" && NotchTimerSupport.clockText(-1) == "00:00"
                && NotchTimerSupport.clockText(.nan) == "00:00", "display rounds up and safely handles invalid remaining time")
+        let clockCases: [(TimeInterval, String)] = [
+            (59, "00:59"), (60, "01:00"), (3599, "59:59"), (3599.01, "1:00:00"),
+            (3600, "1:00:00"), (3601, "1:00:01"), (8580, "2:23:00"),
+            (10800, "3:00:00"), (.greatestFiniteMagnitude, "3:00:00"), (.infinity, "00:00")
+        ]
+        for (seconds, expected) in clockCases {
+            expect(NotchTimerSupport.clockText(seconds) == expected,
+                   "timer clocks show hours at the hour boundary while preserving seconds: \(seconds)")
+        }
         let locale = Locale(identifier: "en_US")
         expect(NotchTimerSupport.compactText(870, locale: locale) == "14m"
                && NotchTimerSupport.compactText(60, locale: locale) == "1m",
@@ -46,15 +129,33 @@ enum NotchActivityTests {
         expect(NotchTimerSupport.compactText(59, locale: locale) == "59s"
                && NotchTimerSupport.compactText(0.01, locale: locale) == "1s",
                "compact timers switch to seconds for the final minute and never finish early")
+        let compactCases: [(TimeInterval, String)] = [
+            (3599, "59m"), (3599.01, "1h"), (3600, "1h"), (3659, "1h"),
+            (3660, "1h 1m"), (8580, "2h 23m"), (10800, "3h")
+        ]
+        for (seconds, expected) in compactCases {
+            expect(NotchTimerSupport.compactText(seconds, locale: locale) == expected,
+                   "compact timers and focus durations show hours and whole minutes: \(seconds)")
+        }
         for invalid in [Double.nan, .infinity, -1, 0] {
             expect(NotchTimerSupport.compactText(invalid, locale: locale) == "0s",
                    "invalid or expired compact times remain safe to display")
         }
-        expect(NotchTimerSupport.compactText(.greatestFiniteMagnitude, locale: locale) == "180m",
+        expect(NotchTimerSupport.compactText(.greatestFiniteMagnitude, locale: locale) == "3h",
                "compact duration formatting preserves the timer's upper limit")
+        let hourCases: [(TimeInterval, String)] = [
+            (3600, "1h00"), (3659.9, "1h00"), (3660, "1h01"), (5700, "1h35"),
+            (8580, "2h23"), (10800, "3h00"), (.greatestFiniteMagnitude, "3h00"), (.nan, "0h00")
+        ]
+        for (seconds, expected) in hourCases {
+            expect(NotchTimerSupport.compactHoursText(seconds) == expected,
+                   "the compact strip writes hours as 1h35, never as a colon that reads like minutes and seconds: \(seconds)")
+        }
         for language in AppLanguage.allCases {
             expect(!NotchTimerSupport.compactText(870, locale: Locale(identifier: language.rawValue)).isEmpty,
                    "remaining time has a compact unit in every supported language")
+            expect(!NotchTimerSupport.compactText(8580, locale: Locale(identifier: language.rawValue)).isEmpty,
+                   "hour and minute units are available in every supported language")
         }
         for width: CGFloat in [320, 480, 560] {
             for notched in [false, true] {
@@ -176,6 +277,11 @@ enum NotchActivityTests {
     }
 
     private static func rulerContracts(expect: (Bool, String) -> Void) {
+        for (minute, expected) in [(1, "1"), (55, "55"), (60, "1h00"), (65, "1h05"),
+                                   (140, "2h20"), (143, "2h23"), (180, "3h00")] {
+            expect(NotchTimerRulerScale.label(for: minute) == expected,
+                   "ruler labels write hours with an h, so an hour mark never reads like the minute clock")
+        }
         for minute in [1, 15, 90, 180] {
             expect(NotchTimerRulerScale.offset(of: minute, selected: minute) == 0,
                    "the chosen minute stays under the center pointer, including the initial value and both endpoints")
@@ -206,27 +312,98 @@ enum NotchActivityTests {
 
     private static func compactTimerContracts(expect: (Bool, String) -> Void) {
         let screen = CGRect(x: 0, y: 0, width: 1470, height: 956)
-        for notched in [false, true] {
-            for layout in NotchSize.allCases {
-                for room: CGFloat in [0, 27, 43, 44, 52, 64, 100, 200, .nan, .infinity] {
-                    let original = NotchGeometry(screen: screen, safeAreaTop: notched ? 32 : 0,
-                                                 cameraWidth: notched ? 180 : 0, layout: layout,
-                                                 compactSideRoom: room)
-                    for downloads in [false, true] {
-                        let compact = original.compactTimerGeometry(showsDownloads: downloads)
-                        if room.isFinite && room >= 44 {
-                            expect(!compact.compactActivityUsesFooter
-                                   && compact.compactActivityWingWidth == min(room, downloads ? 64 : 52),
-                                   "timer wings reserve only a small readable width, including simultaneous downloads")
-                            expect(compact.compactActivityCameraGap == original.cameraWidth
-                                   && compact.compactActivityContentHeight == original.menuBarHeight,
-                                   "narrower timer wings still clear the camera and preserve the menu bar height")
-                        } else {
-                            expect(compact.compactActivityUsesFooter,
-                                   "insufficient or unknown menu space keeps the timer readable in its existing footer")
+        for barHeight: CGFloat in [16, 22, 24, 32, 40, 64] {
+            for notched in [false, true] {
+                for layout in NotchSize.allCases {
+                    for room: CGFloat in [-1, 0, 27, 36, 43, 44, 52, 64, 71, 72, 72.9, 79, 80, 100, 200, .nan, .infinity] {
+                        let original = NotchGeometry(screen: screen, safeAreaTop: notched ? 32 : 0,
+                                                     cameraWidth: notched ? 180 : 0, layout: layout,
+                                                     menuBarHeight: barHeight, compactSideRoom: room)
+                        for downloads in [false, true] {
+                            let compact = original.compactTimerGeometry(showsDownloads: downloads)
+                            if room.isFinite && room >= 72 {
+                                expect(!compact.compactActivityUsesFooter
+                                       && compact.compactActivityWingWidth == min(room, downloads ? 80 : 72).rounded(.down),
+                                       "timer wings keep their readable width around larger cameras, including simultaneous downloads")
+                                expect(compact.compactActivityCameraGap == original.cameraWidth
+                                       && compact.compactActivityContentHeight == original.menuBarHeight,
+                                       "narrower timer wings still clear the camera and preserve the menu bar height")
+                            } else if notched {
+                                expect(!compact.compactActivityUsesFooter && compact.compactActivityWingWidth == 0,
+                                       "unavailable menu space retracts timer wings without drawing over adjacent menus")
+                                expect(compact.activationArea(in: compact.compactActivitySize, hasHeader: false,
+                                                             compactActivity: true).size == compact.compactActivitySize,
+                                       "a retracted timer keeps the whole camera region available to open its controls")
+                            } else {
+                                expect(!compact.compactActivityUsesFooter,
+                                       "a simulated timer never falls back below the menu bar")
+                                expect(compact.compactActivityWingWidth == 0
+                                       && compact.compactActivitySize.height == original.menuBarHeight,
+                                       "a simulated timer with no side room keeps only the camera profile within the menu bar")
+                            }
+                            let positioned = compact.frame(for: compact.compactActivitySize)
+                            expect(screen.contains(positioned), "compact timer placement stays within the screen")
+                            if notched {
+                                expect(positioned.maxY == screen.maxY && positioned.height == original.menuBarHeight
+                                       && compact.compactActivityTopPadding == 0,
+                                       "timer and simultaneous downloads stay beside the camera through menu-space changes")
+                            }
                         }
-                        let positioned = compact.compactActivityGeometry.frame(for: compact.compactActivitySize)
-                        expect(screen.contains(positioned), "compact timer placement stays within the screen")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Compact strips measure their margins from the silhouette rather than
+    /// from a flat padding, so the promise is geometric: whatever a wing draws
+    /// keeps the shared gap from the curve, and the download reading still
+    /// fits the narrowest wing in every language.
+    private static func compactMarginContracts(expect: (Bool, String) -> Void) {
+        let screen = CGRect(x: 0, y: 0, width: 1470, height: 956)
+        let gap = NotchLayout.compactEdgeGap
+        /// Distance from a centred box, anchored at `inset`, to the silhouette.
+        func clearance(_ geometry: NotchGeometry, inset: CGFloat, boxHeight: CGFloat, radius: CGFloat) -> CGFloat {
+            let surface = geometry.compactActivitySize
+            let shoulder = geometry.compactActivityShoulder
+            let corner = min(NotchLayout.surfaceRadius(height: surface.height),
+                             (surface.width - shoulder * 2) / 2)
+            let centre = CGPoint(x: shoulder + corner, y: surface.height - corner)
+            let x = inset + geometry.compactActivityHorizontalPadding + radius
+            let y = surface.height - (geometry.compactActivityContentHeight - boxHeight) / 2 - radius
+            if y <= centre.y { return x - radius - shoulder }
+            if x >= centre.x { return surface.height - y - radius }
+            return corner - hypot(x - centre.x, y - centre.y) - radius
+        }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: NotchDownloadSupport.percentSize, weight: .medium)
+        for barHeight: CGFloat in [24, 32, 37, 40, 44, 64] {
+            for room: CGFloat in [44, 52, 56, 72, 100, 200] {
+                for notched in [true, false] {
+                    let geometry = NotchGeometry(screen: screen, safeAreaTop: notched ? 32 : 0,
+                                                 cameraWidth: notched ? 180 : 160, layout: .compact,
+                                                 menuBarHeight: barHeight, compactSideRoom: room)
+                    let wing = geometry.compactActivityWingWidth
+                    expect(wing == 0 || wing >= 44,
+                           "a compact strip either retracts its wings or keeps them wide enough to fill")
+                    // Cover, equalizer bar, timer icon, download arrow and the
+                    // ink of a percentage. A box too tall for the strip has no
+                    // inset that can clear the curve, and keeps the flat margin.
+                    for (box, radius) in [(26.0, 26.0 * 0.28), (16.0, 0.9), (20.0, 10.0), (17.0, 8.5),
+                                          (NotchDownloadSupport.percentSize * 0.72, 0.0)] {
+                        let side = min(box, geometry.compactActivityContentHeight - gap * 2)
+                        guard side > 0 else { continue }
+                        let corner = min(radius, side / 2)
+                        let inset = geometry.compactActivityEdgeInset(boxHeight: side, radius: corner)
+                        expect(clearance(geometry, inset: inset, boxHeight: side, radius: corner) >= gap - 0.01,
+                               "compact strip content keeps its breathing room from the curved edge")
+                    }
+                    guard wing >= 44 else { continue }
+                    let inset = NotchDownloadSupport.percentInset(in: geometry)
+                    for language in AppLanguage.allCases {
+                        let reading = (1.0).formatted(NotchDownloadSupport.percentFormat(language)) as NSString
+                        let width = reading.size(withAttributes: [.font: font]).width
+                        expect(wing - inset >= width * NotchDownloadSupport.percentMinimumScale,
+                               "a download reading its last percent keeps one whole line in every language")
                     }
                 }
             }
@@ -234,6 +411,15 @@ enum NotchActivityTests {
     }
 
     private static func accessoryContracts(expect: (Bool, String) -> Void) {
+        for (name, symbol) in [("airpods", "airpods"), ("AIRPODS PRO", "airpodspro"),
+                               ("My airpods pro 2", "airpodspro"), ("airpods max", "airpodsmax"),
+                               ("Max's airpods", "airpods"), ("Wireless Headphones", "headphones")] {
+            expect(NotchAccessorySupport.symbol(for: .audio, name: name) == symbol,
+                   "recognized headset families use their native symbol, with generic audio as fallback")
+        }
+        expect(NotchAccessorySupport.symbol(for: .keyboard, name: "Keyboard") == "keyboard"
+               && NotchAccessorySupport.symbol(for: .device, name: "Device") == "battery.25percent",
+               "model-specific audio symbols preserve other accessory types")
         func device(_ percent: Int, id: String = "HID:1", name: String = "Keyboard") -> PeripheralBatteryDevice {
             PeripheralBatteryDevice(id: id, name: name, percent: percent, kind: .keyboard)
         }
