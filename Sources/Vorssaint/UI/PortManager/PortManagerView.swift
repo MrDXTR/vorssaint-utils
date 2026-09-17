@@ -4,7 +4,6 @@
 import SwiftUI
 
 struct PortManagerView: View {
-    var onClose: (() -> Void)? = nil
     @ObservedObject private var service = PortManagerService.shared
     @State private var pending: PortManagerEntry?
     @State private var force = false
@@ -13,14 +12,6 @@ struct PortManagerView: View {
     private var strings: PortManagerFeatureStrings { FeatureStrings.portManager(l10n.language) }
 
     var body: some View {
-        if let onClose {
-            PanelPortManagerView(onClose: onClose)
-        } else {
-            settingsBody
-        }
-    }
-
-    private var settingsBody: some View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
                 Image(systemName: "network")
@@ -28,13 +19,13 @@ struct PortManagerView: View {
                     .foregroundStyle(Color.accentColor)
                 Text(strings.title).font(.headline)
                 Spacer()
-                Text(String(format: strings.openFormat, service.filteredEntries.count))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8).padding(.vertical, 5)
-                    .background(Color.primary.opacity(0.07), in: Capsule())
-                Button { service.refresh() } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.plain).help(strings.refresh)
+                Button {
+                    service.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain).help(strings.refresh)
             }
             .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
             HStack(spacing: 8) {
@@ -97,18 +88,18 @@ struct PortManagerView: View {
     private func portRow(_ entry: PortManagerEntry) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "network")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
-                .frame(width: 20)
+                .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 7) {
+                HStack(spacing: 6) {
                     Text("\(entry.port)")
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     Text(entry.protocolName)
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .padding(.horizontal, 4).padding(.vertical, 1.5)
                         .background(Color.primary.opacity(0.08), in: Capsule())
                 }
                 Text(entry.processName)
@@ -122,13 +113,13 @@ struct PortManagerView: View {
             }
             Spacer(minLength: 4)
             if AppFeature.killProcess.isAvailable {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Button(strings.kill) { force = false; pending = entry }
-                        .buttonStyle(.bordered).controlSize(.small)
+                        .buttonStyle(.bordered).controlSize(.mini)
                         .disabled(entry.startedAt == nil
                                   || KillProcessService.isProtected(pid: entry.pid, name: entry.processName))
                     Button { force = true; pending = entry } label: { Image(systemName: "bolt.fill") }
-                        .buttonStyle(.bordered).controlSize(.small)
+                        .buttonStyle(.bordered).controlSize(.mini)
                         .accessibilityLabel(strings.forceKill)
                         .disabled(entry.startedAt == nil
                                   || KillProcessService.isProtected(pid: entry.pid, name: entry.processName))
@@ -136,9 +127,5 @@ struct PortManagerView: View {
             }
         }
         .padding(.vertical, 3)
-        .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
-        }
     }
 }

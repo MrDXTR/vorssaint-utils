@@ -5,6 +5,7 @@ import AppKit
 import SwiftUI
 
 struct PanelPortManagerView: View {
+    @Environment(\.notchPresentation) private var notchPresentation
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var service = PortManagerService.shared
     @State private var pending: PortManagerEntry?
@@ -113,8 +114,9 @@ struct PanelPortManagerView: View {
                         portRow(entry)
                     }
                 }
+                .padding(.bottom, notchPresentation ? 14 : 0)
             }
-            .frame(maxHeight: 260)
+            .frame(maxHeight: notchPresentation ? 150 : 260)
         }
     }
 
