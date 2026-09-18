@@ -55,7 +55,7 @@ final class PortManagerService: ObservableObject {
         }
         // lsof exits 1 when no listening sockets are found or when it prints a
         // warning. Both cases yield a clean result: an empty list or the parsed rows.
-        // Only non-timeout negative codes count as an infrastructure failure.
+        // A negative status code above (timeout) is the only infrastructure failure.
         return parsed
     }
 }
