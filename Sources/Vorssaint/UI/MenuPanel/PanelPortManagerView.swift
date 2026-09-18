@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Vorssaint
 
-import AppKit
 import SwiftUI
 
 struct PanelPortManagerView: View {
-    @Environment(\.notchPresentation) private var notchPresentation
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var service = PortManagerService.shared
     @State private var pending: PortManagerEntry?
@@ -20,22 +18,12 @@ struct PanelPortManagerView: View {
             header
             controls
             entriesList
-            if notchPresentation && !service.filteredEntries.isEmpty {
-                HStack {
-                    Spacer()
-                    Text(String(format: strings.openFormat, service.filteredEntries.count))
-                        .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 4)
-            }
         }
         .onAppear {
             PanelInteractionState.shared.viewKeepsPopoverOpen = true
             service.refresh()
         }
         .onDisappear { PanelInteractionState.shared.viewKeepsPopoverOpen = false }
-        .scrollEnclosingToTopOnAppear()
         .frame(maxWidth: .infinity, alignment: .leading)
         .alert(pending.map { String(format: strings.terminateFormat, $0.processName) } ?? "",
                isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
@@ -79,54 +67,33 @@ struct PanelPortManagerView: View {
     }
 
     private var controls: some View {
-        Group {
-            if notchPresentation {
-                HStack(spacing: 6) {
-                    TextField(strings.filter, text: $service.query)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11))
-                    Button {
-                        service.refresh()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
-                            .frame(width: 24, height: 22)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .help(strings.refresh)
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text(strings.listeningCaption)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(String(format: strings.openFormat, service.filteredEntries.count))
+                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 6) {
+                TextField(strings.filter, text: $service.query)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                Button {
+                    service.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 22)
                 }
-                .panelCard()
-            } else {
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack {
-                        Text(strings.listeningCaption)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(String(format: strings.openFormat, service.filteredEntries.count))
-                            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 6) {
-                        TextField(strings.filter, text: $service.query)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
-                        Button {
-                            service.refresh()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 11, weight: .semibold))
-                                .frame(width: 24, height: 22)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .help(strings.refresh)
-                    }
-                }
-                .panelCard()
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .help(strings.refresh)
             }
         }
+        .panelCard()
     }
 
     @ViewBuilder
@@ -144,9 +111,8 @@ struct PanelPortManagerView: View {
                         portRow(entry)
                     }
                 }
-                .padding(.bottom, notchPresentation ? 14 : 0)
             }
-            .frame(maxHeight: notchPresentation ? 175 : 260)
+            .frame(maxHeight: 260)
         }
     }
 
@@ -222,31 +188,5 @@ struct PanelPortManagerView: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 6)
         .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 6))
-    }
-}
-
-private extension View {
-    func scrollEnclosingToTopOnAppear() -> some View {
-        background(ScrollToTopOnAppear())
-    }
-}
-
-private struct ScrollToTopOnAppear: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        ScrollHelperView()
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    private final class ScrollHelperView: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            guard window != nil else { return }
-            DispatchQueue.main.async { [weak self] in
-                guard let self, let scroll = self.enclosingScrollView else { return }
-                scroll.contentView.scroll(to: .zero)
-                scroll.reflectScrolledClipView(scroll.contentView)
-            }
-        }
     }
 }

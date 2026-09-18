@@ -53,11 +53,9 @@ final class PortManagerService: ObservableObject {
                              processName: entry.processName,
                              startedAt: KillProcessService.startTime(for: entry.pid))
         }
-        // lsof exits 1 when it prints a warning but still outputs good rows above
-        // it; treat that as a valid snapshot. Only return nil when non-zero AND
-        // the parse came up empty — that's a genuine failure we should not use to
-        // replace good data already on screen.
-        if result.status != 0 && parsed.isEmpty { return nil }
+        // lsof exits 1 when no listening sockets are found or when it prints a
+        // warning. Both cases yield a clean result: an empty list or the parsed rows.
+        // Only non-timeout negative codes count as an infrastructure failure.
         return parsed
     }
 }
